@@ -164,7 +164,6 @@ typedef struct {
 } Editor;
 
 #define LENGTH(arr) (sizeof(arr) / sizeof((arr)[0]))
-#define STRLEN(str) (sizeof(str) - 1)
 #define MAX(x, y)   ((x) > (y) ? (x) : (y))
 #define MIN(x, y)   ((x) < (y) ? (x) : (y))
 #define TAGMASK     ((1 << LENGTH(tags)) - 1)
@@ -397,7 +396,7 @@ draw_border(Client *c) {
 	wattrset(c->window, attrs);
 	getyx(c->window, y, x);
 	mvwhline(c->window, 0, 0, ACS_HLINE, c->w);
-	maxlen = c->w - (2 + STRLEN(TITLE) - STRLEN("%s%sd")  + STRLEN(SEPARATOR) + 2);
+	maxlen = c->w - 10;
 	if (maxlen < 0)
 		maxlen = 0;
 	if ((size_t)maxlen < sizeof(c->title)) {
@@ -405,9 +404,9 @@ draw_border(Client *c) {
 		c->title[maxlen] = '\0';
 	}
 
-	mvwprintw(c->window, 0, 2, TITLE,
+	mvwprintw(c->window, 0, 2, "[%s%s#%d]",
 	          *c->title ? c->title : "",
-	          *c->title ? SEPARATOR : "",
+	          *c->title ? " | " : "",
 	          c->order);
 	if (t)
 		c->title[maxlen] = t;
@@ -458,7 +457,7 @@ draw_all(void) {
 
 static void
 arrange(void) {
-	int m = 0, n = 0;
+	unsigned int m = 0, n = 0;
 	for (Client *c = nextvisible(clients); c; c = nextvisible(c->next)) {
 		c->order = ++n;
 		if (c->minimized)
@@ -477,10 +476,10 @@ arrange(void) {
 		wah--;
 	layout->arrange();
 	if (m && !isarrange(fullscreen)) {
-		int nw = waw / m, nx = wax;
+		unsigned int i = 0, nw = waw / m, nx = wax;
 		for (Client *c = nextvisible(clients); c; c = nextvisible(c->next)) {
 			if (c->minimized) {
-				resize(c, nx, way+wah, nw, 1);
+				resize(c, nx, way+wah, ++i == m ? waw - nx : nw, 1);
 				nx += nw;
 			}
 		}
@@ -1053,14 +1052,13 @@ copymode(const char *args[]) {
 	if (!ed)
 		ed = editors[0].name;
 
-	const char **argv = (const char*[]){ ed, "-", NULL };
+	const char **argv = (const char*[]){ ed, "-", NULL, NULL };
+	char argline[32];
 
 	for (unsigned int i = 0; i < LENGTH(editors); i++) {
 		if (!strcmp(editors[i].name, ed)) {
-			argv = (const char*[]){ ed, NULL, NULL, NULL, NULL, NULL, NULL };
 			for (int j = 1; editors[i].argv[j]; j++) {
 				if (strstr(editors[i].argv[j], "%d")) {
-					char argline[32];
 					int line = vt_content_start(sel->app);
 					snprintf(argline, sizeof(argline), "+%d", line);
 					argv[j] = argline;
@@ -1256,7 +1254,7 @@ incnmaster(const char *args[]) {
 	/* arg handling, manipulate nmaster */
 	if (args[0] == NULL) {
 		screen.nmaster = NMASTER;
-	} else if (1 == sscanf(args[0], "%d", &delta)) {
+	} else if (sscanf(args[0], "%d", &delta) == 1) {
 		if (args[0][0] == '+' || args[0][0] == '-')
 			screen.nmaster += delta;
 		else
@@ -1276,7 +1274,7 @@ setmfact(const char *args[]) {
 	/* arg handling, manipulate mfact */
 	if (args[0] == NULL) {
 		screen.mfact = MFACT;
-	} else if (1 == sscanf(args[0], "%f", &delta)) {
+	} else if (sscanf(args[0], "%f", &delta) == 1) {
 		if (args[0][0] == '+' || args[0][0] == '-')
 			screen.mfact += delta;
 		else
