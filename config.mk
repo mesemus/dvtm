@@ -18,4 +18,5 @@ LDFLAGS += ${LIBS}
 DEBUG_CFLAGS = ${CFLAGS} -UNDEBUG -O0 -g -ggdb -Wall -Wextra -Wno-unused-parameter
 
 CC ?= cc
+CXX ?= g++
 STRIP ?= strip

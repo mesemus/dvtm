@@ -1,7 +1,8 @@
 include config.mk
 
 SRC = dvtm.c vt.c
-OBJ = ${SRC:.c=.o}
+CXX_SRC=script.cc
+OBJ = ${SRC:.c=.o} ${CXX_SRC:.cc=.o}
 
 all: clean options dvtm
 
@@ -17,6 +18,11 @@ config.h:
 .c.o:
 	@echo CC $<
 	@${CC} -c ${CFLAGS} $<
+	
+.cc.o:
+	@echo CC $<
+	@${CXX} -c ${CFLAGS} $<
+
 
 ${OBJ}: config.h config.mk
 
