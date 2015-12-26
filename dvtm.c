@@ -225,6 +225,9 @@ static unsigned int waw, wah, wax, way;
 static Client *clients = NULL;
 static char *title;
 
+/* functions and variables available to scripts */
+static Client *currently_selected_client();
+
 #include "config.h"
 
 /* global variables */
@@ -260,6 +263,11 @@ error(const char *errstr, ...) {
 	vfprintf(stderr, errstr, ap);
 	va_end(ap);
 	exit(EXIT_FAILURE);
+}
+
+static Client *
+currently_selected_client() {
+	return sel;
 }
 
 static bool
@@ -936,7 +944,7 @@ setup(void) {
 }
 
 static void
-destroy(Client *c) {
+destroy(Client *c, bool allow_exit) {
 	if (sel == c)
 		focusnextnm(NULL);
 	detach(c);
@@ -957,10 +965,13 @@ destroy(Client *c) {
 	vt_destroy(c->term);
 	delwin(c->window);
 	if (!clients && LENGTH(actions)) {
-		if (!strcmp(c->cmd, shell))
-			quit(NULL);
-		else
-			create(NULL);
+		if (allow_exit) {
+			if (!strcmp(c->cmd, shell))
+				quit(NULL);
+			else
+				create(NULL);
+
+		}
 	}
 	free(c);
 	arrange();
@@ -969,7 +980,7 @@ destroy(Client *c) {
 static void
 cleanup(void) {
 	while (clients)
-		destroy(clients);
+		destroy(clients, true);
 	vt_shutdown();
 	endwin();
 	free(copyreg.data);
@@ -1762,7 +1773,7 @@ main(int argc, char *argv[]) {
 				handle_editor(c);
 			if (!c->editor && c->died) {
 				Client *t = c->next;
-				destroy(c);
+				destroy(c, true);
 				c = t;
 				continue;
 			}
@@ -1842,4 +1853,24 @@ main(int argc, char *argv[]) {
 
 	cleanup();
 	return 0;
+}
+
+
+// bridge methods
+
+// returns an opaque handle ...
+int bridge_create_window() {
+	create((const char *[]){ NULL });
+	Client *sel = currently_selected_client();
+	return sel->id;
+}
+
+void bridge_draw_all() {
+	draw_all();
+}
+
+
+void bridge_close_all_windows() {
+	while (clients)
+		destroy(clients, false);
 }

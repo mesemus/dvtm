@@ -69,6 +69,12 @@ static Layout layouts[] = {
 	{ "[ ]", fullscreen },
 };
 
+/*
+ * keybindings from project management
+ */
+#include "script.h"
+
+
 #define MOD  CTRL('g')
 #define TAGKEYS(KEY,TAG) \
 	{ { MOD, 'v', KEY,     }, { view,           { tags[TAG] }               } }, \
@@ -132,6 +138,7 @@ static KeyBinding bindings[] = {
 	{ { MOD, 'v', '0'      }, { view,           { NULL }                    } },
 	{ { MOD, 'v', '\t',    }, { viewprevtag,    { NULL }                    } },
 	{ { MOD, 't', '0'      }, { tag,            { NULL }                    } },
+	{ { MOD, 'u'           }, { bridge_select_project,  { NULL }      		} },
 	TAGKEYS( '1',                              0)
 	TAGKEYS( '2',                              1)
 	TAGKEYS( '3',                              2)
@@ -191,9 +198,12 @@ static Cmd commands[] = {
 	{ "create", { create,	{ NULL } } },
 };
 
+extern void bridge_on_create(const char **args);
+
 /* gets executed when dvtm is started */
 static Action actions[] = {
 	{ create, { NULL } },
+	{ bridge_on_create, { NULL }}
 };
 
 static char const * const keytable[] = {

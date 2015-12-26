@@ -4,38 +4,49 @@ SRC = dvtm.c vt.c
 CXX_SRC=script.cc
 OBJ = ${SRC:.c=.o} ${CXX_SRC:.cc=.o}
 
-all: clean options dvtm
+all: options dvtm
 
 options:
 	@echo dvtm build options:
 	@echo "CFLAGS   = ${CFLAGS}"
+	@echo "CPPFLAGS = ${CPPFLAGS}"
 	@echo "LDFLAGS  = ${LDFLAGS}"
 	@echo "CC       = ${CC}"
 
 config.h:
 	cp config.def.h config.h
 
+init.cc: init.chai
+	@echo -n "const char *dvtm_script_initialization_string=\"" >init.cc
+	@cat init.chai | hexdump -v -e '/1 " %02X"' | sed 's/ /\\x/g' >>init.cc
+	@echo "\";" >>init.cc
+    
+
 .c.o:
 	@echo CC $<
 	@${CC} -c ${CFLAGS} $<
 	
 .cc.o:
-	@echo CC $<
-	@${CXX} -c ${CFLAGS} $<
+	@echo CXX $<
+	@${CXX} -c ${CPPFLAGS} $<
 
+precompiled_headers.h.gch: precompiled_headers.h
+	@echo CXX precompiled_headers.h
+	@${CXX} -c ${CPPFLAGS} precompiled_headers.h -o precompiled_headers.h.gch
+	
 
-${OBJ}: config.h config.mk
+${OBJ}: config.h config.mk precompiled_headers.h.gch
 
 dvtm: ${OBJ}
-	@echo CC -o $@
-	@${CC} -o $@ ${OBJ} ${LDFLAGS}
+	@echo CXX -o $@
+	@${CXX} -o $@ ${OBJ} ${LDFLAGS}
 
 debug: clean
 	@make CFLAGS='${DEBUG_CFLAGS}'
 
 clean:
 	@echo cleaning
-	@rm -f dvtm ${OBJ} dvtm-${VERSION}.tar.gz
+	@rm -f dvtm ${OBJ} dvtm-${VERSION}.tar.gz init.cc precompiled_headers.h.gch
 
 dist: clean
 	@echo creating dist tarball
@@ -72,3 +83,4 @@ uninstall:
 	@rm -f ${DESTDIR}${MANPREFIX}/man1/dvtm.1
 
 .PHONY: all options clean dist install uninstall debug
+

@@ -13,3 +13,5 @@ tags
 /debug
 /patches
 /config.h
+/init.cc
+/precompiled_headers.h.gch
