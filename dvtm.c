@@ -21,7 +21,11 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <fcntl.h>
+#ifdef HAVE_NCURSESW
+#include <ncursesw/curses.h>
+#else
 #include <curses.h>
+#endif
 #include <stdio.h>
 #include <stdarg.h>
 #include <signal.h>
