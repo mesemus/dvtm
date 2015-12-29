@@ -1,3 +1,59 @@
 def blah() {
    print("blah");
 }
+
+def trace(s) {
+	log("trace", s);
+}
+
+def debug(s) {
+	log("debug", s);
+}
+
+def info(s) {
+	log("info", s);
+}
+
+def warning(s) {
+	log("warning", s);
+}
+
+def error(s) {
+	log("error", s);
+}
+
+def fatal(s) {
+	log("fatal", s);
+}
+
+
+def ssh(username, server, callback) {
+    dvtm_mark();
+    dvtm_insert_input_string("ssh " + username + "@" + server + "\n");
+    dvtm_delay(1000);
+    var data = dvtm_get_output_from_mark();
+}
+
+def abduco(session_name) {
+    dvtm_mark();
+    dvtm_insert_input_string("( ls ~/.abduco | grep " + session_name + ") && echo -n 'session' && echo -n '-ok' \n");
+    dvtm_delay(100);
+    var response = dvtm_get_output_from_mark();
+    info("abduco response: " + response);
+    var sok = find(response, "session-ok");
+    info("session-ok found at pos: " + to_string(sok));
+    dvtm_insert_input_string("# session ok found at pos " + to_string(sok) + "\n");
+    if (sok == -1) {
+    	info("session does not exist, creating ...");
+	    dvtm_insert_input_string("abduco -c " + session_name + "\n");
+    } else {
+    	info("session exists, attaching");
+    	dvtm_insert_input_string("abduco -a " + session_name + "\n");
+    }
+}
+
+info("initialization script loaded successfully");
+
+// testing ...
+info("calling abduco");
+abduco("blah1");

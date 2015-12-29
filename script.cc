@@ -1,6 +1,6 @@
 #include "script.h"
 #include "precompiled_headers.h"
-#include "init.cc"
+#include "init.h"
 
 #ifdef COMPILE_IN_CHAI_STDLIB
 
@@ -15,13 +15,84 @@
 
 using namespace std;
 namespace fs = boost::filesystem;
+namespace logging = boost::log;
+namespace src = boost::log::sources;
+namespace sinks = boost::log::sinks;
+namespace keywords = boost::log::keywords;
+namespace expr = boost::log::expressions;
+using namespace boost::log::trivial;
 
 typedef vector<fs::path> filevec;
 
 filevec project_files;
 
+
+static string cpp_bridge_get_output_from_mark() {
+	// the terminaloutput allocates an array of char *, need to convert it to string.
+	// hmm, looks that it would be nice to rewrite the whole dvtm to c++/stl
+	TerminalOutput r = bridge_get_output_from_mark();
+	string ret = string(r.buf, r.bufsize);
+
+	// free the temporary buffer
+	free(r.buf);
+	return ret;
+}
+
+static void cpp_bridge_insert_input_string(const string &s) {
+	 bridge_insert_input_string(s.c_str(), s.length());
+}
+
+static void bridge_delay(int ms) {
+	for (int i=0; i<ms; i++) {
+		process_input(1);
+	}
+}
+
+static void bridge_log(string _severity, string s) {
+	src::severity_logger< severity_level > slg;
+	if (_severity == "trace") {
+		BOOST_LOG_SEV(slg, severity_level::trace) << s;
+	} else if(_severity == "debug") {
+		BOOST_LOG_SEV(slg, debug) << s;
+	} else if(_severity == "info") {
+		BOOST_LOG_SEV(slg, info) << s;
+	} else if(_severity == "warning") {
+		BOOST_LOG_SEV(slg, warning) << s;
+	} else if(_severity == "error") {
+		BOOST_LOG_SEV(slg, error) << s;
+	} else if(_severity == "fatal") {
+		BOOST_LOG_SEV(slg, fatal) << s;
+	}
+}
+
 void initialize_scripting() {
+	// logging: TODO: make this customizable ...
+	boost::log::add_common_attributes();
+	logging::add_file_log(
+//			keywords::file_name = "/tmp/dvtm_%Y-%m-%d_%H-%M-%S.%N.log",
+			keywords::file_name = "/tmp/dvtm_%N.log",
+	        keywords::rotation_size = 10 * 1024 * 1024,
+	        keywords::time_based_rotation = sinks::file::rotation_at_time_point(0, 0, 0),
+	        //keywords::format = "[%TimeStamp%] (%LineID%) <%Severity%>: %Message%"
+			keywords::format =
+			        (
+			            expr::stream
+							// core dumps on finish so commented out for now ...
+							// << expr::format_date_time< boost::posix_time::ptime >("TimeStamp", "%Y-%m-%d %H:%M:%S")
+							// << ": "
+			                << expr::attr< unsigned int >("LineID")
+			                << ": <" << logging::trivial::severity
+			                << "> " << expr::smessage
+			        ),
+			keywords::auto_flush = true
+	);
+
 	chai.add(chaiscript::fun(&bridge_create_window), "create_window");
+	chai.add(chaiscript::fun(&bridge_mark), "dvtm_mark");
+	chai.add(chaiscript::fun(&cpp_bridge_get_output_from_mark), "dvtm_get_output_from_mark");
+	chai.add(chaiscript::fun(&cpp_bridge_insert_input_string), "dvtm_insert_input_string");
+	chai.add(chaiscript::fun(&bridge_delay), "dvtm_delay");
+	chai.add(chaiscript::fun(&bridge_log), "log");
 	chai.eval(dvtm_script_initialization_string);
 
 }

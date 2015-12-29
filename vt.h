@@ -63,4 +63,7 @@ pid_t vt_pid_get(Vt*);
 size_t vt_content_get(Vt*, char **s, bool colored);
 int vt_content_start(Vt*);
 
+void vt_mark_current_line(Vt*);
+size_t vt_content_get_from_mark(Vt *t, char **buf, bool colored);
+
 #endif /* VT_H */

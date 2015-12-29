@@ -1,7 +1,7 @@
 include config.mk
 
 SRC = dvtm.c vt.c
-CXX_SRC=script.cc
+CXX_SRC=script.cc init.cc
 OBJ = ${SRC:.c=.o} ${CXX_SRC:.cc=.o}
 
 all: options dvtm
@@ -17,18 +17,22 @@ config.h:
 	cp config.def.h config.h
 
 init.cc: init.chai
+	@echo "CHAI2CC init.chai"
 	@echo -n "const char *dvtm_script_initialization_string=\"" >init.cc
 	@cat init.chai | hexdump -v -e '/1 " %02X"' | sed 's/ /\\x/g' >>init.cc
 	@echo "\";" >>init.cc
     
+script.cc: init.cc
 
-.c.o:
+%.o:%.c $(DEPDIR)/%.d
 	@echo CC $<
 	@${CC} -c ${CFLAGS} $<
+	@$(POSTCOMPILE)
 	
-.cc.o:
+%.o: %.cc $(DEPDIR)/%.d
 	@echo CXX $<
 	@${CXX} -c ${CPPFLAGS} $<
+	@$(POSTCOMPILE)
 
 precompiled_headers.h.gch: precompiled_headers.h
 	@echo CXX precompiled_headers.h
@@ -82,5 +86,13 @@ uninstall:
 	@echo removing manual page from ${DESTDIR}${MANPREFIX}/man1
 	@rm -f ${DESTDIR}${MANPREFIX}/man1/dvtm.1
 
+depend:
+	makedepend -- $(CFLAGS) -- $(SRC) $(CXX_SRC)
+
 .PHONY: all options clean dist install uninstall debug
 
+.SUFFIXES: .chai
+
+$(DEPDIR)/%.d: ;
+
+include $(patsubst %,$(DEPDIR)/%.d,$(basename $(SRCS)))

@@ -193,6 +193,7 @@ struct Vt {
 	char title[256];         /* xterm style window title */
 	vt_title_handler_t title_handler; /* hook which is called when title changes */
 	vt_urgent_handler_t urgent_handler; /* hook which is called upon bell */
+	int lines_after_mark;  /* when mark command is called, any newline gets recorded */
 	void *data;              /* user supplied data */
 };
 
@@ -556,6 +557,7 @@ static void cursor_clamp(Vt *t)
 
 static void cursor_line_down(Vt *t)
 {
+	t->lines_after_mark++;
 	Buffer *b = t->buffer;
 	row_set(b->curs_row, b->cols, b->maxcols - b->cols, NULL);
 	b->curs_row++;
@@ -1957,4 +1959,98 @@ size_t vt_content_get(Vt *t, char **buf, bool colored)
 int vt_content_start(Vt *t)
 {
 	return t->buffer->scroll_above;
+}
+
+void vt_mark_current_line(Vt *t) {
+	t->lines_after_mark = 0;
+}
+
+
+size_t vt_content_get_from_mark(Vt *t, char **buf, bool colored)
+{
+	Buffer *b = t->buffer;
+	int total_lines = b->scroll_above + b->scroll_below + b->rows + 1;
+
+	// if the mark is too old and the text already overflown, use only the lines available
+	int lines = total_lines;
+	if (lines > t->lines_after_mark + 1) {
+		// otherwise, take the lines after mark, at least one line
+		lines = t->lines_after_mark + 1;
+	}
+	size_t size = lines * ((b->cols + 1) * ((colored ? 64 : 0) + MB_CUR_MAX));
+	mbstate_t ps;
+	memset(&ps, 0, sizeof(ps));
+
+	if (!(*buf = malloc(size)))
+		return 0;
+
+	char *s = *buf;
+	Cell *prev_cell = NULL;
+
+	int lineno = 0;
+	Row *row = b->curs_row;
+
+	for (; lineno < lines - 1; lineno++) {
+		Row *prev_row = buffer_row_prev(b, row);
+		if (!prev_row) {
+			break;
+		}
+		row = prev_row;
+	}
+
+	// iterate up until the end of buffer
+	for (; row; row=buffer_row_next(b, row)) {
+		size_t len = 0;
+		char *last_non_space = s;
+		for (int col = 0; col < b->cols; col++) {
+			Cell *cell = row->cells + col;
+			if (colored) {
+				int esclen = 0;
+				if (!prev_cell || cell->attr != prev_cell->attr) {
+					attr_t attr = cell->attr << NCURSES_ATTR_SHIFT;
+					esclen = sprintf(s, "\033[0%s%s%s%s%s%sm",
+						attr & A_BOLD ? ";1" : "",
+						attr & A_DIM ? ";2" : "",
+						attr & A_UNDERLINE ? ";4" : "",
+						attr & A_BLINK ? ";5" : "",
+						attr & A_REVERSE ? ";7" : "",
+						attr & A_INVIS ? ";8" : "");
+					if (esclen > 0)
+						s += esclen;
+				}
+				if (!prev_cell || cell->fg != prev_cell->fg || cell->attr != prev_cell->attr) {
+					if (cell->fg == -1)
+						esclen = sprintf(s, "\033[39m");
+					else
+						esclen = sprintf(s, "\033[38;5;%dm", cell->fg);
+					if (esclen > 0)
+						s += esclen;
+				}
+				if (!prev_cell || cell->bg != prev_cell->bg || cell->attr != prev_cell->attr) {
+					if (cell->bg == -1)
+						esclen = sprintf(s, "\033[49m");
+					else
+						esclen = sprintf(s, "\033[48;5;%dm", cell->bg);
+					if (esclen > 0)
+						s += esclen;
+				}
+				prev_cell = cell;
+			}
+			if (cell->text) {
+				len = wcrtomb(s, cell->text, &ps);
+				if (len > 0)
+					s += len;
+				last_non_space = s;
+			} else if (len) {
+				len = 0;
+			} else {
+				*s++ = ' ';
+			}
+		}
+
+		s = last_non_space;
+		*s++ = '\n';
+	}
+
+	return s - *buf;
 }

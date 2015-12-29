@@ -1727,12 +1727,138 @@ parse_args(int argc, char *argv[]) {
 	return init;
 }
 
+KeyCombo keys;
+unsigned int key_index = 0;
+
+bool
+process_input(int timeoutmillis) {
+
+	sigset_t emptyset, blockset;
+	sigemptyset(&emptyset);
+	sigemptyset(&blockset);
+	sigaddset(&blockset, SIGWINCH);
+	sigaddset(&blockset, SIGCHLD);
+	sigprocmask(SIG_BLOCK, &blockset, NULL);
+
+	int r, nfds = 0;
+	fd_set rd;
+
+	if (screen.need_resize) {
+		resize_screen();
+		screen.need_resize = false;
+	}
+
+	FD_ZERO(&rd);
+	FD_SET(STDIN_FILENO, &rd);
+
+	if (cmdfifo.fd != -1) {
+		FD_SET(cmdfifo.fd, &rd);
+		nfds = cmdfifo.fd;
+	}
+
+	if (bar.fd != -1) {
+		FD_SET(bar.fd, &rd);
+		nfds = MAX(nfds, bar.fd);
+	}
+
+	for (Client *c = clients; c; ) {
+		if (c->editor && c->editor_died)
+			handle_editor(c);
+		if (!c->editor && c->died) {
+			Client *t = c->next;
+			destroy(c, true);
+			c = t;
+			continue;
+		}
+		int pty = c->editor ? vt_pty_get(c->editor) : vt_pty_get(c->app);
+		FD_SET(pty, &rd);
+		nfds = MAX(nfds, pty);
+		c = c->next;
+	}
+
+	struct timespec ts;
+	struct timespec *tts;
+	if (timeoutmillis) {
+		ts.tv_sec = timeoutmillis/1000;
+		ts.tv_nsec = 1000000L * (timeoutmillis % 1000);
+		tts = &ts;
+	} else {
+		tts = NULL;
+	}
+
+	doupdate();
+	r = pselect(nfds + 1, &rd, NULL, NULL, tts, &emptyset);
+
+	if (r == -1 && errno == EINTR)
+		return true;
+
+	if (r < 0) {
+		perror("select()");
+		exit(EXIT_FAILURE);
+	}
+
+	if (FD_ISSET(STDIN_FILENO, &rd)) {
+		int code = getch();
+		if (code >= 0) {
+			keys[key_index++] = code;
+			KeyBinding *binding = NULL;
+			if (code == KEY_MOUSE) {
+				key_index = 0;
+				handle_mouse();
+			} else if ((binding = keybinding(keys))) {
+				unsigned int key_length = 0;
+				while (key_length < MAX_KEYS && binding->keys[key_length])
+					key_length++;
+				if (key_index == key_length) {
+					binding->action.cmd(binding->action.args);
+					key_index = 0;
+					memset(keys, 0, sizeof(keys));
+				}
+			} else {
+				key_index = 0;
+				memset(keys, 0, sizeof(keys));
+				keypress(code);
+			}
+		}
+		if (r == 1) /* no data available on pty's */
+			return true;
+	}
+
+	if (cmdfifo.fd != -1 && FD_ISSET(cmdfifo.fd, &rd))
+		handle_cmdfifo();
+
+	if (bar.fd != -1 && FD_ISSET(bar.fd, &rd))
+		handle_statusbar();
+
+	for (Client *c = clients; c; c = c->next) {
+		if (FD_ISSET(vt_pty_get(c->term), &rd)) {
+			if (vt_process(c->term) < 0 && errno == EIO) {
+				if (c->editor)
+					c->editor_died = true;
+				else
+					c->died = true;
+				continue;
+			}
+		}
+
+		if (c != sel && is_content_visible(c)) {
+			draw_content(c);
+			wnoutrefresh(c->window);
+		}
+	}
+
+	if (is_content_visible(sel)) {
+		draw_content(sel);
+		curs_set(vt_cursor_visible(sel->term));
+		wnoutrefresh(sel->window);
+	}
+	return true;
+}
+
 int
 main(int argc, char *argv[]) {
-	KeyCombo keys;
-	unsigned int key_index = 0;
+
 	memset(keys, 0, sizeof(keys));
-	sigset_t emptyset, blockset;
 
 	setenv("DVTM", VERSION, 1);
 	if (!parse_args(argc, argv)) {
@@ -1740,116 +1866,7 @@ main(int argc, char *argv[]) {
 		startup(NULL);
 	}
 
-	sigemptyset(&emptyset);
-	sigemptyset(&blockset);
-	sigaddset(&blockset, SIGWINCH);
-	sigaddset(&blockset, SIGCHLD);
-	sigprocmask(SIG_BLOCK, &blockset, NULL);
-
-	while (running) {
-		int r, nfds = 0;
-		fd_set rd;
-
-		if (screen.need_resize) {
-			resize_screen();
-			screen.need_resize = false;
-		}
-
-		FD_ZERO(&rd);
-		FD_SET(STDIN_FILENO, &rd);
-
-		if (cmdfifo.fd != -1) {
-			FD_SET(cmdfifo.fd, &rd);
-			nfds = cmdfifo.fd;
-		}
-
-		if (bar.fd != -1) {
-			FD_SET(bar.fd, &rd);
-			nfds = MAX(nfds, bar.fd);
-		}
-
-		for (Client *c = clients; c; ) {
-			if (c->editor && c->editor_died)
-				handle_editor(c);
-			if (!c->editor && c->died) {
-				Client *t = c->next;
-				destroy(c, true);
-				c = t;
-				continue;
-			}
-			int pty = c->editor ? vt_pty_get(c->editor) : vt_pty_get(c->app);
-			FD_SET(pty, &rd);
-			nfds = MAX(nfds, pty);
-			c = c->next;
-		}
-
-		doupdate();
-		r = pselect(nfds + 1, &rd, NULL, NULL, NULL, &emptyset);
-
-		if (r == -1 && errno == EINTR)
-			continue;
-
-		if (r < 0) {
-			perror("select()");
-			exit(EXIT_FAILURE);
-		}
-
-		if (FD_ISSET(STDIN_FILENO, &rd)) {
-			int code = getch();
-			if (code >= 0) {
-				keys[key_index++] = code;
-				KeyBinding *binding = NULL;
-				if (code == KEY_MOUSE) {
-					key_index = 0;
-					handle_mouse();
-				} else if ((binding = keybinding(keys))) {
-					unsigned int key_length = 0;
-					while (key_length < MAX_KEYS && binding->keys[key_length])
-						key_length++;
-					if (key_index == key_length) {
-						binding->action.cmd(binding->action.args);
-						key_index = 0;
-						memset(keys, 0, sizeof(keys));
-					}
-				} else {
-					key_index = 0;
-					memset(keys, 0, sizeof(keys));
-					keypress(code);
-				}
-			}
-			if (r == 1) /* no data available on pty's */
-				continue;
-		}
-
-		if (cmdfifo.fd != -1 && FD_ISSET(cmdfifo.fd, &rd))
-			handle_cmdfifo();
-
-		if (bar.fd != -1 && FD_ISSET(bar.fd, &rd))
-			handle_statusbar();
-
-		for (Client *c = clients; c; c = c->next) {
-			if (FD_ISSET(vt_pty_get(c->term), &rd)) {
-				if (vt_process(c->term) < 0 && errno == EIO) {
-					if (c->editor)
-						c->editor_died = true;
-					else
-						c->died = true;
-					continue;
-				}
-			}
-
-			if (c != sel && is_content_visible(c)) {
-				draw_content(c);
-				wnoutrefresh(c->window);
-			}
-		}
-
-		if (is_content_visible(sel)) {
-			draw_content(sel);
-			curs_set(vt_cursor_visible(sel->term));
-			wnoutrefresh(sel->window);
-		}
-	}
+	while(running && process_input(0));
 
 	cleanup();
 	return 0;
@@ -1873,4 +1890,31 @@ void bridge_draw_all() {
 void bridge_close_all_windows() {
 	while (clients)
 		destroy(clients, false);
+}
+
+void bridge_insert_input_string(const char *s, int length) {
+	Client *sel = currently_selected_client();
+	if (sel) {
+		vt_write(sel->term, s, length);
+	}
+}
+
+void bridge_mark() {
+	Client *sel = currently_selected_client();
+	if (sel) {
+		vt_mark_current_line(sel->term);
+	}
+}
+
+TerminalOutput bridge_get_output_from_mark() {
+	Client *sel = currently_selected_client();
+	TerminalOutput ret;
+	if (sel) {
+		ret.bufsize = vt_content_get_from_mark(sel->term, &ret.buf, false);
+		// ret.bufsize = vt_content_get(sel->term, &ret.buf, false);
+	} else {
+		ret.buf = malloc(1);
+		ret.bufsize = 0;
+	}
+	return ret;
 }
