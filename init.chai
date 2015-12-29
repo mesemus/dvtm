@@ -26,15 +26,18 @@ def fatal(s) {
 	log("fatal", s);
 }
 
-
 def ssh(username, server, callback) {
+    // callback is a class instance with method callback(data)
     dvtm_mark();
     dvtm_insert_input_string("ssh " + username + "@" + server + "\n");
     dvtm_delay(1000);
     var data = dvtm_get_output_from_mark();
+    // TODO: check if session created
+    callback.callback(0);
 }
 
-def abduco(session_name) {
+def abduco(session_name, callback) {
+    // callback is a class instance with method callback(data)
     dvtm_mark();
     dvtm_insert_input_string("( ls ~/.abduco | grep " + session_name + ") && echo -n 'session' && echo -n '-ok' \n");
     dvtm_delay(100);
@@ -46,14 +49,40 @@ def abduco(session_name) {
     if (sok == -1) {
     	info("session does not exist, creating ...");
 	    dvtm_insert_input_string("abduco -c " + session_name + "\n");
+	    callback.callback(false);
     } else {
     	info("session exists, attaching");
     	dvtm_insert_input_string("abduco -a " + session_name + "\n");
+	    callback.callback(true);
     }
+}
+
+class SshWithAbducoCallback {
+  def SshWithAbducoCallback(session_name, abduco_callback) {
+      this.session_name = session_name;
+      this.abduco_callback = abduco_callback;
+  }
+  def callback(data) {
+    abduco(this.session_name, this.abduco_callback);
+  }
+}
+
+def ssh_with_abduco(username, server, session_name, callback) {
+    var ud = SshWithAbducoCallback(session_name, callback);
+    ssh(username, server, ud);
 }
 
 info("initialization script loaded successfully");
 
+class TestCallback {
+    def TestCallback() {}
+    def callback(data) {
+        dvtm_delay(100);
+	    dvtm_insert_input_string("# session created, status " + to_string(data) + "\n");
+    }
+}
+
 // testing ...
-info("calling abduco");
-abduco("blah1");
+// abduco("blah1", created_callback);
+create_window();
+ssh_with_abduco("simeki", "localhost", "blah1", TestCallback());
