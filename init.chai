@@ -3,27 +3,27 @@ def blah() {
 }
 
 def trace(s) {
-	log("trace", s);
+	log("trace", to_string(s));
 }
 
 def debug(s) {
-	log("debug", s);
+	log("debug", to_string(s));
 }
 
 def info(s) {
-	log("info", s);
+	log("info", to_string(s));
 }
 
 def warning(s) {
-	log("warning", s);
+	log("warning", to_string(s));
 }
 
 def error(s) {
-	log("error", s);
+	log("error", to_string(s));
 }
 
 def fatal(s) {
-	log("fatal", s);
+	log("fatal", to_string(s));
 }
 
 def ssh(username, server, callback) {
@@ -84,5 +84,5 @@ class TestCallback {
 
 // testing ...
 // abduco("blah1", created_callback);
-create_window();
-ssh_with_abduco("simeki", "localhost", "blah1", TestCallback());
+// create_window();
+// ssh_with_abduco("simeki", "localhost", "blah1", TestCallback());
